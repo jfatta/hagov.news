@@ -4,6 +4,13 @@
 import { escapeHtml } from "../util";
 import type { SessionUser } from "../auth";
 
+// Favicon: el mismo bloque ▮ verde del logo, sobre el fondo oscuro del sitio.
+const FAVICON =
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='#0b0f14'/><rect x='9' y='9' width='14' height='14' fill='#2de2a6'/></svg>`
+  );
+
 const CSS = `
 :root{--bg:#0b0f14;--panel:#101720;--fg:#c9d7e0;--dim:#5c7186;--neon:#2de2a6;--neon2:#e83e8c;--link:#d7e4ee;--visited:#7d93a8;--border:#1c2836}
 *{margin:0;padding:0;box-sizing:border-box}
@@ -66,6 +73,7 @@ export function page(title: string, body: string, user: SessionUser | null, extr
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)}</title>
+<link rel="icon" type="image/svg+xml" href="${FAVICON}">
 <style>${CSS}</style>
 ${extraHead}
 </head>
