@@ -17,7 +17,7 @@ function storyLine(s: StoryRow, user: SessionUser | null, voted: Set<number>, go
   const src = s.source_name
     ? escapeHtml(s.source_name)
     : s.submitted_by_name
-      ? `<a href="/user/${escapeHtml(s.submitted_by_name)}">${escapeHtml(s.submitted_by_name)}</a>`
+      ? `<a href="/user/${escapeHtml(s.submitted_by_name)}" class="human">${escapeHtml(s.submitted_by_name)}</a>`
       : "?";
   const comments = s.comment_count === 1 ? "1 comentario" : `${s.comment_count} comentarios`;
   const admin = user?.is_admin

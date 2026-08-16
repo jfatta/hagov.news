@@ -29,6 +29,8 @@ ol.stories>li::before{content:counter(n) ".";color:var(--dim);min-width:2rem;tex
 .meta{color:var(--dim);font-size:.78rem;padding-left:2.5rem;margin-top:-.15rem;margin-bottom:.25rem}
 .meta a{color:var(--dim)}
 .meta a:hover{color:var(--neon)}
+.meta a.human{color:var(--neon);opacity:.75}
+.meta a.human:hover{opacity:1}
 .more{display:inline-block;margin:.9rem 0 0 2.5rem;color:var(--neon)}
 h1{font-size:1.05rem;margin-bottom:.6rem}
 .box{background:var(--panel);border:1px solid var(--border);padding:1rem;margin:.8rem 0;border-radius:2px}
