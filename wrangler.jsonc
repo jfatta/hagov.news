@@ -1,0 +1,30 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "hagovnews",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "triggers": {
+    "crons": ["*/10 * * * *"]
+  },
+  "routes": [
+    { "pattern": "hagov.news", "custom_domain": true },
+    { "pattern": "www.hagov.news", "custom_domain": true }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "hagovnews-db",
+      "database_id": "91c5ef94-9b3a-43d8-b99d-ddec47e64bfe"
+    }
+  ],
+  "vars": {
+    // Widget "hagov.news" creado el 2026-08-15. Vacío = verificación deshabilitada (dev local sin Turnstile).
+    "TURNSTILE_SITE_KEY": "0x4AAAAAAERJX1dCQKtCrv8-"
+    // TURNSTILE_SECRET va como secret (wrangler secret put), nunca acá.
+  }
+}
