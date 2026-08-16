@@ -43,7 +43,9 @@ function now(): number {
 }
 
 function bad(msg: string, user: SessionUser | null, status = 400): Response {
-  const res = page("error · hagov.news", `<p class="err">${escapeHtml(msg)}</p><p><a href="/">← volver</a></p>`, user);
+  const res = page("error · hagov.news", `<p class="err">${escapeHtml(msg)}</p><p><a href="/">← volver</a></p>`, user, {
+    noindex: true,
+  });
   return new Response(res.body, { status, headers: res.headers });
 }
 
@@ -78,6 +80,16 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   const path = url.pathname;
   const method = request.method;
 
+  // www es un alias, no un sitio aparte: sin esto, Google indexaría el mismo
+  // contenido en dos dominios distintos.
+  if (url.hostname === "www.hagov.news") {
+    url.hostname = "hagov.news";
+    return redirect(url.toString(), undefined, 301);
+  }
+
+  if (method === "GET" && path === "/robots.txt") return robotsTxt();
+  if (method === "GET" && path === "/sitemap.xml") return sitemapXml(env);
+
   // Portada cacheada 60 s para visitantes anónimos
   const anonymous = !(request.headers.get("Cookie") ?? "").includes("session=");
   const cacheable = method === "GET" && anonymous && (path === "/" || path === "/nuevas" || path.startsWith("/item/"));
@@ -99,19 +111,27 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
     else if (path.startsWith("/responder/")) res = await handleReplyForm(env, path, user);
     else if (path.startsWith("/user/")) res = await handleUser(env, path, user);
     else if (path === "/login") {
-      res = page("entrar · hagov.news", loginPage(undefined, env.TURNSTILE_SITE_KEY || undefined), user,
-        env.TURNSTILE_SITE_KEY ? TURNSTILE_HEAD : "");
+      res = page("entrar · hagov.news", loginPage(undefined, env.TURNSTILE_SITE_KEY || undefined), user, {
+        extraHead: env.TURNSTILE_SITE_KEY ? TURNSTILE_HEAD : "",
+        noindex: true,
+      });
     } else if (path === "/enviar") {
-      res = user ? page("enviar · hagov.news", submitPage(), user) : redirect("/login");
+      res = user ? page("enviar · hagov.news", submitPage(), user, { noindex: true }) : redirect("/login");
     } else if (path === "/logout") {
       await destroySession(env, request);
       res = redirect("/", clearSessionCookie());
     } else if (path === "/ajustes") {
-      res = user ? page("ajustes · hagov.news", settingsPage(), user) : redirect("/login");
+      res = user ? page("ajustes · hagov.news", settingsPage(), user, { noindex: true }) : redirect("/login");
     } else if (path === "/bienvenida") {
-      res = user ? page("bienvenida · hagov.news", welcomePage(user.username), user) : redirect("/login");
+      res = user
+        ? page("bienvenida · hagov.news", welcomePage(user.username), user, { noindex: true })
+        : redirect("/login");
     } else if (path === "/acerca") {
-      res = page("acerca · hagov.news", aboutPage(), user);
+      res = page("acerca · hagov.news", aboutPage(), user, {
+        canonicalPath: "/acerca",
+        description:
+          "Qué es hagov.news: cómo se arma la portada, de dónde salen las noticias y por qué no hay algoritmo de engagement.",
+      });
     } else if (path === "/admin" && user?.is_admin) {
       res = await handleAdmin(env, user);
     }
@@ -141,12 +161,55 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
   return res;
 }
 
+function robotsTxt(): Response {
+  const body = `User-agent: *
+Allow: /
+Disallow: /admin
+Disallow: /ajustes
+Disallow: /bienvenida
+Disallow: /responder/
+
+Sitemap: https://hagov.news/sitemap.xml
+`;
+  return new Response(body, { headers: { "Content-Type": "text/plain; charset=utf-8" } });
+}
+
+async function sitemapXml(env: Env): Promise<Response> {
+  const cutoff = now() - 48 * 3600;
+  const { results } = await env.DB.prepare(
+    "SELECT id, created_at FROM stories WHERE dead = 0 AND canonical_id IS NULL AND created_at > ? ORDER BY created_at DESC LIMIT 500"
+  )
+    .bind(cutoff)
+    .all<{ id: number; created_at: number }>();
+
+  const iso = (t: number) => new Date(t * 1000).toISOString();
+  const staticUrls = ["/", "/nuevas", "/acerca"].map((p) => `<url><loc>https://hagov.news${p}</loc></url>`).join("\n");
+  const storyUrls = results
+    .map((s) => `<url><loc>https://hagov.news/item/${s.id}</loc><lastmod>${iso(s.created_at)}</lastmod></url>`)
+    .join("\n");
+
+  const body = `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${staticUrls}
+${storyUrls}
+</urlset>`;
+  return new Response(body, { headers: { "Content-Type": "application/xml; charset=utf-8" } });
+}
+
 async function handleFront(env: Env, url: URL, user: SessionUser | null, pagePath: string): Promise<Response> {
   const p = Math.max(1, Math.min(10, parseInt(url.searchParams.get("p") ?? "1", 10) || 1));
   const stories = pagePath === "/" ? await frontPage(env, p) : await newestPage(env, p);
   const voted = user ? await votedStoryIds(env, user.id, stories.map((s) => s.id)) : new Set<number>();
   const title = pagePath === "/" ? "hagov.news" : "nuevas · hagov.news";
-  return page(title, storyList(stories, user, voted, pagePath, p, (p - 1) * 30 + 1), user);
+  const description =
+    pagePath === "/"
+      ? "Las noticias argentinas más votadas de las últimas horas, rankeadas por la comunidad."
+      : "Noticias argentinas en orden cronológico, lo último de una docena de medios.";
+  return page(title, storyList(stories, user, voted, pagePath, p, (p - 1) * 30 + 1), user, {
+    canonicalPath: p > 1 ? `${pagePath}?p=${p}` : pagePath,
+    description,
+    isHome: true,
+  });
 }
 
 async function handleItem(env: Env, path: string, user: SessionUser | null): Promise<Response> {
@@ -158,7 +221,10 @@ async function handleItem(env: Env, path: string, user: SessionUser | null): Pro
   const [coverage, comments] = await Promise.all([getCoverage(env, id), getComments(env, id)]);
   const voted = user ? await votedStoryIds(env, user.id, [id]) : new Set<number>();
   const votedComments = user ? await votedCommentIds(env, user.id, comments.map((c) => c.id)) : new Set<number>();
-  return page(`${story.title} · hagov.news`, itemPage(story, coverage, comments, user, voted, votedComments), user);
+  return page(`${story.title} · hagov.news`, itemPage(story, coverage, comments, user, voted, votedComments), user, {
+    canonicalPath: `/item/${id}`,
+    description: `${story.title} (${story.domain}) — ${story.comment_count} comentarios en hagov.news.`,
+  });
 }
 
 async function votedCommentIds(env: Env, userId: number, ids: number[]): Promise<Set<number>> {
@@ -182,7 +248,7 @@ async function handleReplyForm(env: Env, path: string, user: SessionUser | null)
   if (!comment) return bad("comentario inexistente", user, 404);
   const story = await getStory(env, comment.story_id);
   if (!story) return bad("nota inexistente", user, 404);
-  return page("responder · hagov.news", replyPage(story, comment), user);
+  return page("responder · hagov.news", replyPage(story, comment), user, { noindex: true });
 }
 
 async function handleUser(env: Env, path: string, viewer: SessionUser | null): Promise<Response> {
@@ -198,7 +264,10 @@ async function handleUser(env: Env, path: string, viewer: SessionUser | null): P
   )
     .bind(u.id)
     .all<CommentRow & { story_title: string }>();
-  return page(`${u.username} · hagov.news`, userPage(u, recent), viewer);
+  return page(`${u.username} · hagov.news`, userPage(u, recent), viewer, {
+    canonicalPath: `/user/${encodeURIComponent(u.username)}`,
+    description: `Perfil de ${u.username} en hagov.news: karma y comentarios recientes.`,
+  });
 }
 
 async function handleRegister(request: Request, env: Env): Promise<Response> {
@@ -208,8 +277,10 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
   const ip = request.headers.get("CF-Connecting-IP");
 
   const fail = (msg: string) =>
-    page("entrar · hagov.news", loginPage(msg, env.TURNSTILE_SITE_KEY || undefined), null,
-      env.TURNSTILE_SITE_KEY ? TURNSTILE_HEAD : "");
+    page("entrar · hagov.news", loginPage(msg, env.TURNSTILE_SITE_KEY || undefined), null, {
+      extraHead: env.TURNSTILE_SITE_KEY ? TURNSTILE_HEAD : "",
+      noindex: true,
+    });
 
   if (!/^[a-zA-Z0-9_]{2,20}$/.test(username)) return fail("usuario inválido: 2-20 caracteres, letras/números/_");
   if (password.length < 8) return fail("la contraseña necesita al menos 8 caracteres");
@@ -239,7 +310,7 @@ async function handleRegister(request: Request, env: Env): Promise<Response> {
 
 async function handleLogin(request: Request, env: Env): Promise<Response> {
   const fail = (msg = "usuario o contraseña incorrectos") =>
-    page("entrar · hagov.news", loginPage(msg), null);
+    page("entrar · hagov.news", loginPage(msg), null, { noindex: true });
 
   const ip = clientIp(request);
   const okRate = await rateLimit(env, `login:${ip}`, LOGIN_ATTEMPTS_PER_IP, LOGIN_WINDOW_SECONDS);
@@ -259,7 +330,7 @@ async function handleLogin(request: Request, env: Env): Promise<Response> {
 
 async function handleChangePassword(request: Request, env: Env, user: SessionUser | null): Promise<Response> {
   if (!user) return redirect("/login");
-  const fail = (msg: string) => page("ajustes · hagov.news", settingsPage(msg, true), user);
+  const fail = (msg: string) => page("ajustes · hagov.news", settingsPage(msg, true), user, { noindex: true });
 
   const okRate = await rateLimit(env, `pwchange:${user.id}`, 10, 3600);
   if (!okRate) return fail("demasiados intentos, esperá un rato");
@@ -279,7 +350,7 @@ async function handleChangePassword(request: Request, env: Env, user: SessionUse
 
   const { hash, salt } = await hashPassword(newPassword);
   await env.DB.prepare("UPDATE users SET password_hash = ?, salt = ? WHERE id = ?").bind(hash, salt, user.id).run();
-  return page("ajustes · hagov.news", settingsPage("contraseña actualizada"), user);
+  return page("ajustes · hagov.news", settingsPage("contraseña actualizada"), user, { noindex: true });
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -379,7 +450,7 @@ async function handleSubmit(request: Request, env: Env, user: SessionUser | null
   const f = await form(request);
   const title = cleanTitle(f.title ?? "");
   const rawUrl = (f.url ?? "").trim();
-  const fail = (msg: string) => page("enviar · hagov.news", submitPage(msg), user);
+  const fail = (msg: string) => page("enviar · hagov.news", submitPage(msg), user, { noindex: true });
   if (title.length < 10) return fail("el título es muy corto");
   if (title.length > 200) return fail("el título es demasiado largo");
   if (!/^https?:\/\//.test(rawUrl)) return fail("la url debe empezar con http(s)://");
@@ -443,7 +514,8 @@ async function handleAdmin(env: Env, user: SessionUser): Promise<Response> {
     "admin · hagov.news",
     `<h1>fuentes</h1><table class="admin"><tr><th>fuente</th><th>on</th><th>último fetch (UTC)</th><th>error</th><th></th></tr>${srcRows}</table>
 <h1 style="margin-top:1.2rem">comentarios denunciados</h1><table class="admin"><tr><th>flags</th><th>usuario</th><th>comentario</th><th></th></tr>${flagRows || "<tr><td colspan=4>ninguno</td></tr>"}</table>`,
-    user
+    user,
+    { noindex: true }
   );
 }
 

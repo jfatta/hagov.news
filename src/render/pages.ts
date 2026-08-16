@@ -13,7 +13,7 @@ function voteLink(story: StoryRow, user: SessionUser | null, voted: Set<number>,
   return `<form method="post" class="votef" data-points="pts-s-${story.id}" action="${target}" style="display:inline"><button class="${cls}" title="${title}">▲</button></form>`;
 }
 
-function storyLine(s: StoryRow, user: SessionUser | null, voted: Set<number>, goto: string): string {
+function storyLine(s: StoryRow, user: SessionUser | null, voted: Set<number>, goto: string, asH1 = false): string {
   const src = s.source_name
     ? escapeHtml(s.source_name)
     : s.submitted_by_name
@@ -23,9 +23,11 @@ function storyLine(s: StoryRow, user: SessionUser | null, voted: Set<number>, go
   const admin = user?.is_admin
     ? ` · <form method="post" action="/admin/kill" style="display:inline"><input type="hidden" name="type" value="story"><input type="hidden" name="id" value="${s.id}"><input type="hidden" name="goto" value="${escapeHtml(goto)}"><button class="inline">[matar]</button></form>`
     : "";
+  const link = `<a href="${escapeHtml(s.url)}" rel="noopener">${escapeHtml(s.title)}</a>`;
+  const title = asH1 ? `<h1 style="display:inline;font:inherit">${link}</h1>` : link;
   return `<li>
   ${voteLink(s, user, voted, goto)}
-  <span class="t"><a href="${escapeHtml(s.url)}" rel="noopener">${escapeHtml(s.title)}</a>
+  <span class="t">${title}
   <span class="dom">(${escapeHtml(s.domain)})</span></span>
 </li>
 <div class="meta"><span id="pts-s-${s.id}">${s.points} pts</span> · ${src} · ${timeAgo(s.created_at)} · <a href="/item/${s.id}">${comments}</a>${admin}</div>`;
@@ -109,7 +111,7 @@ export function itemPage(
   const form = user
     ? commentForm(story.id, null, "comentar")
     : `<p class="meta" style="padding-left:0"><a href="/login">entrá</a> para comentar.</p>`;
-  return `<ol class="stories">${storyLine(story, user, voted, `/item/${story.id}`)}</ol>
+  return `<ol class="stories">${storyLine(story, user, voted, `/item/${story.id}`, true)}</ol>
 ${coverageHtml}
 ${form}
 ${renderCommentTree(comments, null, story, user, votedComments)}`;

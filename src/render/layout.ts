@@ -20,6 +20,7 @@ a:hover{color:var(--neon)}
 header{display:flex;flex-wrap:wrap;gap:.4rem 1rem;align-items:baseline;padding:.7rem 0;border-bottom:1px solid var(--border);margin-bottom:.8rem}
 header .logo{color:var(--neon);font-weight:700;font-size:1.05rem;text-shadow:0 0 8px rgba(45,226,166,.45)}
 header .logo::before{content:"▮ "}
+header h1{display:contents}
 header nav{display:flex;gap:.9rem;font-size:.85rem}
 header nav a{color:var(--dim)}
 header nav a:hover{color:var(--neon)}
@@ -63,10 +64,45 @@ table.admin td,table.admin th{border:1px solid var(--border);padding:.3rem .5rem
 @media (max-width:600px){body{font-size:13px}header .who{margin-left:0;width:100%}}
 `;
 
-export function page(title: string, body: string, user: SessionUser | null, extraHead = ""): Response {
+const SITE_URL = "https://hagov.news";
+const DEFAULT_DESCRIPTION =
+  "Agregador minimalista de noticias argentinas: la portada la arma la comunidad votando, sin clickbait ni tracking.";
+
+export interface PageOptions {
+  extraHead?: string;
+  description?: string;
+  /** Ruta canónica (ej. "/item/123"). Si se omite, la página no lleva canonical ni og:url. */
+  canonicalPath?: string;
+  /** Páginas privadas o de acción (login, ajustes, admin...) no deben indexarse. */
+  noindex?: boolean;
+  /** La portada lleva el logo como <h1> real; el resto de las páginas lo dejan como link. */
+  isHome?: boolean;
+}
+
+export function page(title: string, body: string, user: SessionUser | null, opts: PageOptions = {}): Response {
+  const { extraHead = "", description = DEFAULT_DESCRIPTION, canonicalPath, noindex = false, isHome = false } = opts;
   const who = user
     ? `<a href="/user/${escapeHtml(user.username)}">${escapeHtml(user.username)}</a> (${user.karma}) · <a href="/ajustes">ajustes</a> · <a href="/logout">salir</a>`
     : `<a href="/login">entrar</a>`;
+  const canonicalUrl = canonicalPath ? SITE_URL + canonicalPath : undefined;
+  const seoTags = [
+    `<meta name="description" content="${escapeHtml(description)}">`,
+    noindex ? `<meta name="robots" content="noindex">` : "",
+    canonicalUrl ? `<link rel="canonical" href="${escapeHtml(canonicalUrl)}">` : "",
+    `<meta property="og:site_name" content="hagov.news">`,
+    `<meta property="og:title" content="${escapeHtml(title)}">`,
+    `<meta property="og:description" content="${escapeHtml(description)}">`,
+    `<meta property="og:type" content="website">`,
+    canonicalUrl ? `<meta property="og:url" content="${escapeHtml(canonicalUrl)}">` : "",
+    `<meta name="twitter:card" content="summary">`,
+    `<meta name="twitter:title" content="${escapeHtml(title)}">`,
+    `<meta name="twitter:description" content="${escapeHtml(description)}">`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const logo = isHome
+    ? `<h1><a class="logo" href="/">hagov.news</a></h1>`
+    : `<a class="logo" href="/">hagov.news</a>`;
   const html = `<!doctype html>
 <html lang="es">
 <head>
@@ -74,12 +110,13 @@ export function page(title: string, body: string, user: SessionUser | null, extr
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)}</title>
 <link rel="icon" type="image/svg+xml" href="${FAVICON}">
+${seoTags}
 <style>${CSS}</style>
 ${extraHead}
 </head>
 <body>
 <header>
-  <a class="logo" href="/">hagov.news</a>
+  ${logo}
   <nav><a href="/nuevas">nuevas</a><a href="/enviar">enviar</a></nav>
   <span class="who">${who}</span>
 </header>
@@ -119,8 +156,8 @@ document.addEventListener("submit", function (e) {
   });
 }
 
-export function redirect(to: string, setCookie?: string): Response {
+export function redirect(to: string, setCookie?: string, status: 301 | 302 = 302): Response {
   const headers = new Headers({ Location: to });
   if (setCookie) headers.set("Set-Cookie", setCookie);
-  return new Response(null, { status: 302, headers });
+  return new Response(null, { status, headers });
 }
