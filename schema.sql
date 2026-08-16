@@ -104,3 +104,6 @@ INSERT OR IGNORE INTO sources (name, feed_url, site_url, format) VALUES
 -- El feed general de Infobae mezcla sus verticales internacionales; nos quedamos con lo argentino
 UPDATE sources SET url_exclude = '^/(mexico|peru|colombia|venezuela|espana|america|estados-unidos)/'
 WHERE feed_url LIKE '%infobae.com%';
+
+-- Sacada a pedido del usuario el 2026-08-15
+UPDATE sources SET enabled = 0 WHERE feed_url = 'https://tn.com.ar/rss.xml';
